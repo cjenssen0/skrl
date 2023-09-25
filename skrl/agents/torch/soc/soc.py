@@ -17,6 +17,7 @@ from skrl.models.torch import Model
 
 # [start-config-dict-torch]
 SOC_DEFAULT_CONFIG = {
+    "N_options": 2,                 # Number of options
     "gradient_steps": 1,            # gradient steps
     "batch_size": 64,               # training batch size
 
@@ -192,8 +193,9 @@ class SOC(Agent):
             self.memory.create_tensor(name="actions", size=self.action_space, dtype=torch.float32)
             self.memory.create_tensor(name="rewards", size=1, dtype=torch.float32)
             self.memory.create_tensor(name="terminated", size=1, dtype=torch.bool)
+            self.memory.create_tensor(name="options", size=1, dtype=torch.int32)
 
-            self._tensors_names = ["states", "actions", "rewards", "next_states", "terminated"]
+            self._tensors_names = ["states", "actions", "rewards", "next_states", "terminated", "options"]
 
     def act(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
         """Process the environment's states to make a decision (actions) using the main policy
@@ -215,6 +217,7 @@ class SOC(Agent):
 
         # sample stochastic actions
         actions, _, outputs = self.policy.act({"states": self._state_preprocessor(states)}, role="policy")
+        # TODO: index and sample based on selected option
 
         return actions, None, outputs
 
@@ -225,6 +228,7 @@ class SOC(Agent):
                           next_states: torch.Tensor,
                           terminated: torch.Tensor,
                           truncated: torch.Tensor,
+                          options: torch.Tensor,
                           infos: Any,
                           timestep: int,
                           timesteps: int) -> None:
@@ -242,6 +246,8 @@ class SOC(Agent):
         :type terminated: torch.Tensor
         :param truncated: Signals to indicate that episodes have been truncated
         :type truncated: torch.Tensor
+        :param options: Options taken by the agent
+        :type options: torch.Tensor
         :param infos: Additional information about the environment
         :type infos: Any type supported by the environment
         :param timestep: Current timestep
@@ -258,10 +264,10 @@ class SOC(Agent):
 
             # storage transition in memory
             self.memory.add_samples(states=states, actions=actions, rewards=rewards, next_states=next_states,
-                                    terminated=terminated, truncated=truncated)
+                                    terminated=terminated, truncated=truncated, options=options)
             for memory in self.secondary_memories:
                 memory.add_samples(states=states, actions=actions, rewards=rewards, next_states=next_states,
-                                   terminated=terminated, truncated=truncated)
+                                   terminated=terminated, truncated=truncated, options=options)
 
     def pre_interaction(self, timestep: int, timesteps: int) -> None:
         """Callback called before the interaction with the environment
@@ -271,6 +277,8 @@ class SOC(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
+        # TODO: Actually compute options from neural network
+        self.option = torch.randint(self.cfg["N_options"], (1,1))
         pass
 
     def post_interaction(self, timestep: int, timesteps: int) -> None:
@@ -298,7 +306,7 @@ class SOC(Agent):
         :type timesteps: int
         """
         # sample a batch from memory
-        sampled_states, sampled_actions, sampled_rewards, sampled_next_states, sampled_dones = \
+        sampled_states, sampled_actions, sampled_rewards, sampled_next_states, sampled_dones, sampled_options = \
             self.memory.sample(names=self._tensors_names, batch_size=self._batch_size)[0]
 
         # gradient steps
@@ -319,6 +327,7 @@ class SOC(Agent):
             # compute critic loss
             critic_1_values, _, _ = self.critic_1.act({"states": sampled_states, "taken_actions": sampled_actions}, role="critic_1")
             critic_2_values, _, _ = self.critic_2.act({"states": sampled_states, "taken_actions": sampled_actions}, role="critic_2")
+            # TODO compute Option-Critic loss (beta)
 
             critic_loss = (F.mse_loss(critic_1_values, target_values) + F.mse_loss(critic_2_values, target_values)) / 2
 
@@ -333,8 +342,11 @@ class SOC(Agent):
             actions, log_prob, _ = self.policy.act({"states": sampled_states}, role="policy")
             critic_1_values, _, _ = self.critic_1.act({"states": sampled_states, "taken_actions": actions}, role="critic_1")
             critic_2_values, _, _ = self.critic_2.act({"states": sampled_states, "taken_actions": actions}, role="critic_2")
+            # TODO compute Option-Policy loss
 
             policy_loss = (self._entropy_coefficient * log_prob - torch.min(critic_1_values, critic_2_values)).mean()
+
+            # TODO compute termination loss (beta)
 
             # optimization step (policy)
             self.policy_optimizer.zero_grad()
