@@ -96,18 +96,19 @@ class ManualTrainer(Trainer):
             self.states, infos = self.env.reset()
 
         if self.num_simultaneous_agents == 1:
-            # pre-interaction
+            # pre-interaction: Estimate option from current state
             self.agents.pre_interaction(timestep=timestep, timesteps=timesteps)
-
+            
             # compute actions
             with torch.no_grad():
+                options = self.agents.option
                 actions = self.agents.act(self.states, timestep=timestep, timesteps=timesteps)[0]
 
         else:
             # pre-interaction
             for agent in self.agents:
                 agent.pre_interaction(timestep=timestep, timesteps=timesteps)
-
+            # TODO: compute options
             # compute actions
             with torch.no_grad():
                 actions = torch.vstack([agent.act(self.states[scope[0]:scope[1]], timestep=timestep, timesteps=timesteps)[0] \
@@ -130,6 +131,7 @@ class ManualTrainer(Trainer):
                                               next_states=next_states,
                                               terminated=terminated,
                                               truncated=truncated,
+                                              options=options,
                                               infos=infos,
                                               timestep=timestep,
                                               timesteps=timesteps)
