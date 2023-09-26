@@ -101,7 +101,8 @@ class ManualTrainer(Trainer):
             
             # compute actions
             with torch.no_grad():
-                options = self.agents.option
+                # options = self.agents.option
+                options = self.agents.get_options(self.states, timestep=timestep, timesteps=timesteps)
                 actions = self.agents.act(self.states, timestep=timestep, timesteps=timesteps)[0]
 
         else:
@@ -149,6 +150,7 @@ class ManualTrainer(Trainer):
                                             next_states=next_states[scope[0]:scope[1]],
                                             terminated=terminated[scope[0]:scope[1]],
                                             truncated=truncated[scope[0]:scope[1]],
+                                            options=options[scope[0]:scope[1]],
                                             infos=infos,
                                             timestep=timestep,
                                             timesteps=timesteps)
@@ -203,11 +205,15 @@ class ManualTrainer(Trainer):
 
         with torch.no_grad():
             if self.num_simultaneous_agents == 1:
-                # compute actions
+                # compute options and actions
+                options = self.agents.get_options(self.states, timestep=timestep, timesteps=timesteps)
                 actions = self.agents.act(self.states, timestep=timestep, timesteps=timesteps)[0]
 
             else:
-                # compute actions
+                # compute options and actions
+                options = torch.vstack([agent.get_options(self.states[scope[0]:scope[1]], timestep=timestep, timesteps=timesteps) \
+                                        for agent, scope in zip(self.agents, self.agents_scope)])
+                
                 actions = torch.vstack([agent.act(self.states[scope[0]:scope[1]], timestep=timestep, timesteps=timesteps)[0] \
                                         for agent, scope in zip(self.agents, self.agents_scope)])
 
@@ -227,6 +233,7 @@ class ManualTrainer(Trainer):
                                               terminated=terminated,
                                               truncated=truncated,
                                               infos=infos,
+                                              options=options,
                                               timestep=timestep,
                                               timesteps=timesteps)
                 super(type(self.agents), self.agents).post_interaction(timestep=timestep, timesteps=timesteps)

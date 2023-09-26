@@ -343,25 +343,42 @@ class SOC(Agent):
             with torch.no_grad():
                 next_actions, next_log_prob, _ = self.policy.act({"states": sampled_next_states}, role="policy")
 
-                target_Qw_values, _, _ = self.target_critic_Qw.act(
+                Qw_next, _, _ = self.target_critic_Qw.act(
                     {"states": sampled_next_states}, role="target_critic_Qw"
                 )
-                target_Qu_values, _, _ = self.target_critic_Qu.act(
-                    {"states": sampled_next_states, "taken_options": sampled_options, "taken_actions": next_actions}, role="target_critic_Qu"
-                )
-                target_q_values = torch.min(target_Qw_values, target_Qu_values) - self._entropy_coefficient * next_log_prob
-                target_values = sampled_rewards + self._discount_factor * sampled_dones.logical_not() * target_q_values
+
+                # target_q_values = torch.min(target_Qw_values, target_Qu_values) - self._entropy_coefficient * next_log_prob
+                #
+                V_next = Qw_next.max(1)
+                
+                # select Qw and beta for given options, reduce to 1-dim tensor with squeeze
+                Qw_next_selected = Qw_next.gather(-1, sampled_options)#.squeeze(-1)
+
+                # Define target for Qw and Qu
+                # TODO add beta_next
+                U = (1-0.5)*Qw_next_selected + 0.5*V_next.values.unsqueeze(-1)
+                # U = (1-beta_next)*Qw_next_selected + beta_next*V_next
+                # target = sampled_rewards + self._discount_factor*(1 - sampled_dones)*U
+                target = sampled_rewards + self._discount_factor*(~sampled_dones)*U
+                target_Qw = target - self._entropy_coefficient*next_log_prob
+                # target_Qw = target - alpha*logp_a_tilde.gather(-1, w).squeeze(-1)
+                # target_values = sampled_rewards + self._discount_factor * sampled_dones.logical_not() * target_q_values
+
 
             # compute critic loss
-            critic_Qw_values, _, _ = self.critic_Qw.act(
+            Qw, _, _ = self.critic_Qw.act(
                 {"states": sampled_next_states}, role="critic_Qw"
             )
-            critic_Qu_values, _, _ = self.critic_Qu.act(
+            Qw_selected = Qw.gather(-1, sampled_options)#.squeeze(-1)
+            Qu, _, _ = self.critic_Qu.act(
                 {"states": sampled_states, "taken_options": sampled_options, "taken_actions": sampled_actions}, role="critic_Qu"
             )
             # TODO compute Option-Critic loss (beta)
 
-            critic_loss = (F.mse_loss(critic_Qw_values, target_values) + F.mse_loss(critic_Qu_values, target_values)) / 2
+            # critic_loss = (F.mse_loss(critic_Qw_values, target_values) + F.mse_loss(critic_Qu_values, target_values)) / 2
+            loss_Qw = F.mse_loss(Qw_selected, target_Qw)
+            loss_Qu = F.mse_loss(Qu, target)
+            critic_loss = loss_Qw + loss_Qu
 
             # optimization step (critic)
             self.critic_optimizer.zero_grad()
@@ -372,11 +389,15 @@ class SOC(Agent):
 
             # compute policy (actor) loss
             actions, log_prob, _ = self.policy.act({"states": sampled_states}, role="policy")
-            critic_Qw_values, _, _ = self.critic_Qw.act({"states": sampled_states, "taken_actions": actions}, role="critic_Qw")
-            critic_Qu_values, _, _ = self.critic_Qu.act({"states": sampled_states, "taken_options": sampled_options, "taken_actions": actions}, role="critic_Qu")
+            Qw, _, _ = self.critic_Qw.act(
+                {"states": sampled_states}, role="critic_Qw"
+            )
+            Qu, _, _ = self.critic_Qu.act(
+                {"states": sampled_states, "taken_options": sampled_options, "taken_actions": actions}, role="critic_Qu"
+            )
             # TODO compute Option-Policy loss
 
-            policy_loss = (self._entropy_coefficient * log_prob - torch.min(critic_Qw_values, critic_Qu_values)).mean()
+            policy_loss = (self._entropy_coefficient * log_prob - torch.min(Qw, Qu)).mean()
 
             # TODO compute termination loss (beta)
 
@@ -414,17 +435,17 @@ class SOC(Agent):
                 self.track_data("Loss / Policy loss", policy_loss.item())
                 self.track_data("Loss / Critic loss", critic_loss.item())
 
-                self.track_data("Q-network / Qw (max)", torch.max(critic_Qw_values).item())
-                self.track_data("Q-network / Qw (min)", torch.min(critic_Qw_values).item())
-                self.track_data("Q-network / Qw (mean)", torch.mean(critic_Qw_values).item())
+                self.track_data("Q-network / Qw (max)", torch.max(Qw).item())
+                self.track_data("Q-network / Qw (min)", torch.min(Qw).item())
+                self.track_data("Q-network / Qw (mean)", torch.mean(Qw).item())
 
-                self.track_data("Q-network / Qu (max)", torch.max(critic_Qu_values).item())
-                self.track_data("Q-network / Qu (min)", torch.min(critic_Qu_values).item())
-                self.track_data("Q-network / Qu (mean)", torch.mean(critic_Qu_values).item())
+                self.track_data("Q-network / Qu (max)", torch.max(Qu).item())
+                self.track_data("Q-network / Qu (min)", torch.min(Qu).item())
+                self.track_data("Q-network / Qu (mean)", torch.mean(Qu).item())
 
-                self.track_data("Target / Target (max)", torch.max(target_values).item())
-                self.track_data("Target / Target (min)", torch.min(target_values).item())
-                self.track_data("Target / Target (mean)", torch.mean(target_values).item())
+                self.track_data("Target / Target (max)", torch.max(target).item())
+                self.track_data("Target / Target (min)", torch.min(target).item())
+                self.track_data("Target / Target (mean)", torch.mean(target).item())
 
                 if self._learn_entropy:
                     self.track_data("Loss / Entropy loss", entropy_loss.item())
