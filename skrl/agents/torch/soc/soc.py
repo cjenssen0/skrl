@@ -269,6 +269,30 @@ class SOC(Agent):
                 memory.add_samples(states=states, actions=actions, rewards=rewards, next_states=next_states,
                                    terminated=terminated, truncated=truncated, options=options)
 
+    def get_options(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
+        """Process the environment's states to make a decision (options) using the main policy
+
+        :param states: Environment's states
+        :type states: torch.Tensor
+        :param timestep: Current timestep
+        :type timestep: int
+        :param timesteps: Number of timesteps
+        :type timesteps: int
+
+        :return: Options
+        :rtype: torch.Tensor
+        """
+        # sample random actions
+        # TODO, check for stochasticity
+        # if timestep < self._random_timesteps:
+            # return self.policy.random_act({"states": self._state_preprocessor(states)}, role="policy")
+
+        # sample stochastic actions
+        # actions, _, outputs = self.policy.act({"states": self._state_preprocessor(states)}, role="policy")
+        # TODO: index and sample based on selected option
+        options = torch.randint(self.cfg["N_options"], (1,1))
+        return options
+
     def pre_interaction(self, timestep: int, timesteps: int) -> None:
         """Callback called before the interaction with the environment
 
