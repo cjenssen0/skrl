@@ -100,26 +100,26 @@ class SOC(Agent):
 
         # models
         self.policy = self.models.get("policy", None)
-        self.critic_1 = self.models.get("critic_1", None)
-        self.critic_2 = self.models.get("critic_2", None)
-        self.target_critic_1 = self.models.get("target_critic_1", None)
-        self.target_critic_2 = self.models.get("target_critic_2", None)
+        self.critic_Qw = self.models.get("critic_Qw", None)
+        self.critic_Qu = self.models.get("critic_Qu", None)
+        self.target_critic_Qw = self.models.get("target_critic_Qw", None)
+        self.target_critic_Qu = self.models.get("target_critic_Qu", None)
 
         # checkpoint models
         self.checkpoint_modules["policy"] = self.policy
-        self.checkpoint_modules["critic_1"] = self.critic_1
-        self.checkpoint_modules["critic_2"] = self.critic_2
-        self.checkpoint_modules["target_critic_1"] = self.target_critic_1
-        self.checkpoint_modules["target_critic_2"] = self.target_critic_2
+        self.checkpoint_modules["critic_Qw"] = self.critic_Qw
+        self.checkpoint_modules["critic_Qu"] = self.critic_Qu
+        self.checkpoint_modules["target_critic_Qw"] = self.target_critic_Qw
+        self.checkpoint_modules["target_critic_Qu"] = self.target_critic_Qu
 
-        if self.target_critic_1 is not None and self.target_critic_2 is not None:
+        if self.target_critic_Qw is not None and self.target_critic_Qu is not None:
             # freeze target networks with respect to optimizers (update via .update_parameters())
-            self.target_critic_1.freeze_parameters(True)
-            self.target_critic_2.freeze_parameters(True)
+            self.target_critic_Qw.freeze_parameters(True)
+            self.target_critic_Qu.freeze_parameters(True)
 
             # update target networks (hard update)
-            self.target_critic_1.update_parameters(self.critic_1, polyak=1)
-            self.target_critic_2.update_parameters(self.critic_2, polyak=1)
+            self.target_critic_Qw.update_parameters(self.critic_Qw, polyak=1)
+            self.target_critic_Qu.update_parameters(self.critic_Qu, polyak=1)
 
         # configuration
         self._gradient_steps = self.cfg["gradient_steps"]
@@ -162,9 +162,9 @@ class SOC(Agent):
             self.checkpoint_modules["entropy_optimizer"] = self.entropy_optimizer
 
         # set up optimizers and learning rate schedulers
-        if self.policy is not None and self.critic_1 is not None and self.critic_2 is not None:
+        if self.policy is not None and self.critic_Qw is not None and self.critic_Qu is not None:
             self.policy_optimizer = torch.optim.Adam(self.policy.parameters(), lr=self._actor_learning_rate)
-            self.critic_optimizer = torch.optim.Adam(itertools.chain(self.critic_1.parameters(), self.critic_2.parameters()),
+            self.critic_optimizer = torch.optim.Adam(itertools.chain(self.critic_Qw.parameters(), self.critic_Qu.parameters()),
                                                      lr=self._critic_learning_rate)
             if self._learning_rate_scheduler is not None:
                 self.policy_scheduler = self._learning_rate_scheduler(self.policy_optimizer, **self.cfg["learning_rate_scheduler_kwargs"])
@@ -193,7 +193,7 @@ class SOC(Agent):
             self.memory.create_tensor(name="actions", size=self.action_space, dtype=torch.float32)
             self.memory.create_tensor(name="rewards", size=1, dtype=torch.float32)
             self.memory.create_tensor(name="terminated", size=1, dtype=torch.bool)
-            self.memory.create_tensor(name="options", size=1, dtype=torch.int32)
+            self.memory.create_tensor(name="options", size=1, dtype=torch.int64)
 
             self._tensors_names = ["states", "actions", "rewards", "next_states", "terminated", "options"]
 
@@ -319,32 +319,40 @@ class SOC(Agent):
             with torch.no_grad():
                 next_actions, next_log_prob, _ = self.policy.act({"states": sampled_next_states}, role="policy")
 
-                target_q1_values, _, _ = self.target_critic_1.act({"states": sampled_next_states, "taken_actions": next_actions}, role="target_critic_1")
-                target_q2_values, _, _ = self.target_critic_2.act({"states": sampled_next_states, "taken_actions": next_actions}, role="target_critic_2")
-                target_q_values = torch.min(target_q1_values, target_q2_values) - self._entropy_coefficient * next_log_prob
+                target_Qw_values, _, _ = self.target_critic_Qw.act(
+                    {"states": sampled_next_states}, role="target_critic_Qw"
+                )
+                target_Qu_values, _, _ = self.target_critic_Qu.act(
+                    {"states": sampled_next_states, "taken_options": sampled_options, "taken_actions": next_actions}, role="target_critic_Qu"
+                )
+                target_q_values = torch.min(target_Qw_values, target_Qu_values) - self._entropy_coefficient * next_log_prob
                 target_values = sampled_rewards + self._discount_factor * sampled_dones.logical_not() * target_q_values
 
             # compute critic loss
-            critic_1_values, _, _ = self.critic_1.act({"states": sampled_states, "taken_actions": sampled_actions}, role="critic_1")
-            critic_2_values, _, _ = self.critic_2.act({"states": sampled_states, "taken_actions": sampled_actions}, role="critic_2")
+            critic_Qw_values, _, _ = self.critic_Qw.act(
+                {"states": sampled_next_states}, role="critic_Qw"
+            )
+            critic_Qu_values, _, _ = self.critic_Qu.act(
+                {"states": sampled_states, "taken_options": sampled_options, "taken_actions": sampled_actions}, role="critic_Qu"
+            )
             # TODO compute Option-Critic loss (beta)
 
-            critic_loss = (F.mse_loss(critic_1_values, target_values) + F.mse_loss(critic_2_values, target_values)) / 2
+            critic_loss = (F.mse_loss(critic_Qw_values, target_values) + F.mse_loss(critic_Qu_values, target_values)) / 2
 
             # optimization step (critic)
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
             if self._grad_norm_clip > 0:
-                nn.utils.clip_grad_norm_(itertools.chain(self.critic_1.parameters(), self.critic_2.parameters()), self._grad_norm_clip)
+                nn.utils.clip_grad_norm_(itertools.chain(self.critic_Qw.parameters(), self.critic_Qu.parameters()), self._grad_norm_clip)
             self.critic_optimizer.step()
 
             # compute policy (actor) loss
             actions, log_prob, _ = self.policy.act({"states": sampled_states}, role="policy")
-            critic_1_values, _, _ = self.critic_1.act({"states": sampled_states, "taken_actions": actions}, role="critic_1")
-            critic_2_values, _, _ = self.critic_2.act({"states": sampled_states, "taken_actions": actions}, role="critic_2")
+            critic_Qw_values, _, _ = self.critic_Qw.act({"states": sampled_states, "taken_actions": actions}, role="critic_Qw")
+            critic_Qu_values, _, _ = self.critic_Qu.act({"states": sampled_states, "taken_options": sampled_options, "taken_actions": actions}, role="critic_Qu")
             # TODO compute Option-Policy loss
 
-            policy_loss = (self._entropy_coefficient * log_prob - torch.min(critic_1_values, critic_2_values)).mean()
+            policy_loss = (self._entropy_coefficient * log_prob - torch.min(critic_Qw_values, critic_Qu_values)).mean()
 
             # TODO compute termination loss (beta)
 
@@ -369,8 +377,8 @@ class SOC(Agent):
                 self._entropy_coefficient = torch.exp(self.log_entropy_coefficient.detach())
 
             # update target networks
-            self.target_critic_1.update_parameters(self.critic_1, polyak=self._polyak)
-            self.target_critic_2.update_parameters(self.critic_2, polyak=self._polyak)
+            self.target_critic_Qw.update_parameters(self.critic_Qw, polyak=self._polyak)
+            self.target_critic_Qu.update_parameters(self.critic_Qu, polyak=self._polyak)
 
             # update learning rate
             if self._learning_rate_scheduler:
@@ -382,13 +390,13 @@ class SOC(Agent):
                 self.track_data("Loss / Policy loss", policy_loss.item())
                 self.track_data("Loss / Critic loss", critic_loss.item())
 
-                self.track_data("Q-network / Q1 (max)", torch.max(critic_1_values).item())
-                self.track_data("Q-network / Q1 (min)", torch.min(critic_1_values).item())
-                self.track_data("Q-network / Q1 (mean)", torch.mean(critic_1_values).item())
+                self.track_data("Q-network / Qw (max)", torch.max(critic_Qw_values).item())
+                self.track_data("Q-network / Qw (min)", torch.min(critic_Qw_values).item())
+                self.track_data("Q-network / Qw (mean)", torch.mean(critic_Qw_values).item())
 
-                self.track_data("Q-network / Q2 (max)", torch.max(critic_2_values).item())
-                self.track_data("Q-network / Q2 (min)", torch.min(critic_2_values).item())
-                self.track_data("Q-network / Q2 (mean)", torch.mean(critic_2_values).item())
+                self.track_data("Q-network / Qu (max)", torch.max(critic_Qu_values).item())
+                self.track_data("Q-network / Qu (min)", torch.min(critic_Qu_values).item())
+                self.track_data("Q-network / Qu (mean)", torch.mean(critic_Qu_values).item())
 
                 self.track_data("Target / Target (max)", torch.max(target_values).item())
                 self.track_data("Target / Target (min)", torch.min(target_values).item())
