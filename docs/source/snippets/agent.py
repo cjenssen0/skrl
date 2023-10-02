@@ -106,6 +106,7 @@ class CUSTOM(Agent):
                           next_states: torch.Tensor,
                           terminated: torch.Tensor,
                           truncated: torch.Tensor,
+                          options: torch.Tensor,
                           infos: Any,
                           timestep: int,
                           timesteps: int) -> None:
@@ -130,7 +131,7 @@ class CUSTOM(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
-        super().record_transition(states, actions, rewards, next_states, terminated, truncated, infos, timestep, timesteps)
+        super().record_transition(states, actions, rewards, next_states, terminated, options, truncated, infos, timestep, timesteps)
         # ========================================
         # - record agent's specific data in memory
         # ========================================

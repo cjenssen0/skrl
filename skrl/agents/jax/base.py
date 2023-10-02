@@ -304,6 +304,7 @@ class Agent:
                           next_states: Union[np.ndarray, jax.Array],
                           terminated: Union[np.ndarray, jax.Array],
                           truncated: Union[np.ndarray, jax.Array],
+                          options: Union[None, np.ndarray, jax.Array],
                           infos: Any,
                           timestep: int,
                           timesteps: int) -> None:

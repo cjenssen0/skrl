@@ -251,6 +251,20 @@ class Agent:
         """
         raise NotImplementedError
 
+    def get_options(self,
+                    states: torch.Tensor,
+                    timestep: int,
+                    timesteps: int) -> None:
+        """For hierarchical models, selects the option for the state
+        :param states: Environment's states
+        :type states: torch.Tensor
+        :param timestep: Current timestep
+        :type timestep: int
+        :param timesteps: Number of timesteps
+        :type timesteps: int
+        """
+        pass
+
     def record_transition(self,
                           states: torch.Tensor,
                           actions: torch.Tensor,

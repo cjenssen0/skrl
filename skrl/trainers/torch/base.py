@@ -167,8 +167,9 @@ class Trainer:
             # pre-interaction
             self.agents.pre_interaction(timestep=timestep, timesteps=self.timesteps)
 
-            # compute actions
+            # compute actions (and options)
             with torch.no_grad():
+                options = self.agents.get_options(states, timestep=timestep, timesteps=self.timesteps)
                 actions = self.agents.act(states, timestep=timestep, timesteps=self.timesteps)[0]
 
                 # step the environments
@@ -185,6 +186,7 @@ class Trainer:
                                               next_states=next_states,
                                               terminated=terminated,
                                               truncated=truncated,
+                                              options=options,
                                               infos=infos,
                                               timestep=timestep,
                                               timesteps=self.timesteps)
@@ -220,8 +222,9 @@ class Trainer:
 
         for timestep in tqdm.tqdm(range(self.initial_timestep, self.timesteps), disable=self.disable_progressbar):
 
-            # compute actions
+            # compute actions (and options)
             with torch.no_grad():
+                options = self.agents.get_options(states, timestep, timesteps=self.timesteps)
                 actions = self.agents.act(states, timestep=timestep, timesteps=self.timesteps)[0]
 
                 # step the environments
@@ -238,6 +241,7 @@ class Trainer:
                                               next_states=next_states,
                                               terminated=terminated,
                                               truncated=truncated,
+                                              options=options,
                                               infos=infos,
                                               timestep=timestep,
                                               timesteps=self.timesteps)
@@ -280,6 +284,7 @@ class Trainer:
 
             # compute actions
             with torch.no_grad():
+                options = self.agents.get_options(states, timestep=timestep, timesteps=self.timesteps)
                 actions = self.agents.act(states, timestep=timestep, timesteps=self.timesteps)[0]
 
                 # step the environments
@@ -299,6 +304,7 @@ class Trainer:
                                               next_states=next_states,
                                               terminated=terminated,
                                               truncated=truncated,
+                                              options=options,
                                               infos=infos,
                                               timestep=timestep,
                                               timesteps=self.timesteps)
@@ -336,6 +342,7 @@ class Trainer:
 
             # compute actions
             with torch.no_grad():
+                options = self.agents.get_options(states, timestep=timestep, timesteps=self.timesteps)
                 actions = self.agents.act(states, timestep=timestep, timesteps=self.timesteps)[0]
 
                 # step the environments
@@ -355,6 +362,7 @@ class Trainer:
                                               next_states=next_states,
                                               terminated=terminated,
                                               truncated=truncated,
+                                              options=options,
                                               infos=infos,
                                               timestep=timestep,
                                               timesteps=self.timesteps)
