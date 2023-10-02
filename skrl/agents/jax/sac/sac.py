@@ -312,6 +312,7 @@ class SAC(Agent):
                           next_states: Union[np.ndarray, jax.Array],
                           terminated: Union[np.ndarray, jax.Array],
                           truncated: Union[np.ndarray, jax.Array],
+                          options: Union[np.ndarray, jax.Array],
                           infos: Any,
                           timestep: int,
                           timesteps: int) -> None:

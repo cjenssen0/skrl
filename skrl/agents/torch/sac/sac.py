@@ -192,6 +192,7 @@ class SAC(Agent):
             self.memory.create_tensor(name="actions", size=self.action_space, dtype=torch.float32)
             self.memory.create_tensor(name="rewards", size=1, dtype=torch.float32)
             self.memory.create_tensor(name="terminated", size=1, dtype=torch.bool)
+            self.memory.create_tensor(name="options", size=1, dtype=torch.int64)
 
             self._tensors_names = ["states", "actions", "rewards", "next_states", "terminated"]
 
@@ -225,6 +226,7 @@ class SAC(Agent):
                           next_states: torch.Tensor,
                           terminated: torch.Tensor,
                           truncated: torch.Tensor,
+                          options: torch.Tensor,
                           infos: Any,
                           timestep: int,
                           timesteps: int) -> None:
