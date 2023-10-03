@@ -170,7 +170,7 @@ class Trainer:
             # compute actions (and options)
             with torch.no_grad():
                 options = self.agents.get_options(states, timestep=timestep, timesteps=self.timesteps)
-                actions = self.agents.act(states, timestep=timestep, timesteps=self.timesteps)[0]
+                actions = self.agents.act(states, options, timestep=timestep, timesteps=self.timesteps)[0]
 
                 # step the environments
                 next_states, rewards, terminated, truncated, infos = self.env.step(actions)

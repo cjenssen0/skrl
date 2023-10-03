@@ -197,7 +197,7 @@ class SOC(Agent):
 
             self._tensors_names = ["states", "actions", "rewards", "next_states", "terminated", "options"]
 
-    def act(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
+    def act(self, states: torch.Tensor, options: torch.Tensor,  timestep: int, timesteps: int) -> torch.Tensor:
         """Process the environment's states to make a decision (actions) using the main policy
 
         :param states: Environment's states
@@ -213,10 +213,10 @@ class SOC(Agent):
         # sample random actions
         # TODO, check for stochasticity
         if timestep < self._random_timesteps:
-            return self.policy.random_act({"states": self._state_preprocessor(states)}, role="policy")
+            return self.policy.random_act({"states": self._state_preprocessor(states), "options": options}, role="policy")
 
         # sample stochastic actions
-        actions, _, outputs = self.policy.act({"states": self._state_preprocessor(states)}, role="policy")
+        actions, _, outputs = self.policy.act({"states": self._state_preprocessor(states), "options": options}, role="policy")
         # TODO: index and sample based on selected option
 
         return actions, None, outputs
@@ -341,7 +341,7 @@ class SOC(Agent):
 
             # compute target values
             with torch.no_grad():
-                next_actions, next_log_prob, _ = self.policy.act({"states": sampled_next_states}, role="policy")
+                next_actions, next_log_prob, _ = self.policy.act({"states": sampled_next_states, "options": sampled_options}, role="policy")
 
                 Qw_next, _, _ = self.target_critic_Qw.act(
                     {"states": sampled_next_states}, role="target_critic_Qw"
@@ -363,7 +363,6 @@ class SOC(Agent):
                 target_Qw = target - self._entropy_coefficient*next_log_prob
                 # target_Qw = target - alpha*logp_a_tilde.gather(-1, w).squeeze(-1)
                 # target_values = sampled_rewards + self._discount_factor * sampled_dones.logical_not() * target_q_values
-
 
             # compute critic loss
             Qw, _, _ = self.critic_Qw.act(
@@ -388,7 +387,7 @@ class SOC(Agent):
             self.critic_optimizer.step()
 
             # compute policy (actor) loss
-            actions, log_prob, _ = self.policy.act({"states": sampled_states}, role="policy")
+            actions, log_prob, _ = self.policy.act({"states": sampled_states, "options": sampled_options}, role="policy")
             Qw, _, _ = self.critic_Qw.act(
                 {"states": sampled_states}, role="critic_Qw"
             )

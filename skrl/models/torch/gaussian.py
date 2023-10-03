@@ -221,6 +221,7 @@ class GaussianMixin:
 
 class GaussianOptionsMixin:
     def __init__(self,
+                 num_options: int = 2,
                  clip_actions: bool = False,
                  clip_log_std: bool = True,
                  min_log_std: float = -20,
@@ -319,6 +320,8 @@ class GaussianOptionsMixin:
             self._g_reduction = {}
         self._g_reduction[role] = torch.mean if reduction == "mean" else torch.sum if reduction == "sum" \
             else torch.prod if reduction == "prod" else None
+
+        self.num_options = num_options
 
     def act(self,
             inputs: Mapping[str, Union[torch.Tensor, Any]],
