@@ -24,8 +24,8 @@ SOC_DEFAULT_CONFIG = {
     "discount_factor": 0.99,        # discount factor (gamma)
     "polyak": 0.005,                # soft update hyperparameter (tau)
 
-    "actor_learning_rate": 1e-3,    # actor learning rate
-    "critic_learning_rate": 1e-3,   # critic learning rate
+    "actor_learning_rate": 1e-2,    # actor learning rate
+    "critic_learning_rate": 1e-2,   # critic learning rate
     "learning_rate_scheduler": None,        # learning rate scheduler class (see torch.optim.lr_scheduler)
     "learning_rate_scheduler_kwargs": {},   # learning rate scheduler's kwargs (e.g. {"step_size": 1e-3})
 
@@ -97,6 +97,8 @@ class SOC(Agent):
                          action_space=action_space,
                          device=device,
                          cfg=_cfg)
+
+        self.curr_option = torch.randint(_cfg["N_options"], (1,1))
 
         # models
         self.policy = self.models.get("policy", None)
@@ -290,7 +292,26 @@ class SOC(Agent):
         # sample stochastic actions
         # actions, _, outputs = self.policy.act({"states": self._state_preprocessor(states)}, role="policy")
         # TODO: index and sample based on selected option
-        options = torch.randint(self.cfg["N_options"], (1,1))
+        #options = torch.randint(self.cfg["N_options"], (1,1))
+        eps = 0.1
+        w = self.curr_option
+        beta = self.policy.getBeta({"states": states}, role="termination")
+        
+        # keep current option with probability 1-beta_w
+        if (1-beta.gather(-1, w)).item() > torch.rand((1,1)).item():
+            options = w
+
+        # else get new option
+        else:
+            num_options = self.cfg["N_options"]
+            if torch.rand((1,1)).item() > eps:
+                Qw, _, _ = self.critic_Qw({"states": states}, role="critic")
+                options = torch.argmax(Qw.detach(), -1)
+                options = Qw.argmax(-1).unsqueeze(-1)
+            else:
+                options = torch.randint(num_options, (1,1))
+
+        self.curr_option = options
         return options
 
     def pre_interaction(self, timestep: int, timesteps: int) -> None:
@@ -341,7 +362,8 @@ class SOC(Agent):
 
             # compute target values
             with torch.no_grad():
-                next_actions, next_log_prob, _ = self.policy.act({"states": sampled_next_states, "options": sampled_options}, role="policy")
+                # next_actions, next_log_prob, _ = self.policy.act({"states": sampled_next_states, "options": sampled_options}, role="policy")
+                next_actions, next_log_prob, _ = self.policy.act({"states": sampled_states, "options": sampled_options}, role="policy")
 
                 Qw_next, _, _ = self.target_critic_Qw.act(
                     {"states": sampled_next_states}, role="target_critic_Qw"
